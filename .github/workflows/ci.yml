@@ -1,0 +1,51 @@
+# CI for agent-corrections.
+#
+# GitHub Actions only discovers workflows in a repo's root .github/workflows/,
+# so as staged here (inside a larger monorepo, at
+# releases/open-source/agent-corrections/.github/workflows/ci.yml) this file
+# is inert -- it does not run in the monorepo's CI. It activates once this
+# tree becomes its own repository root, where these paths are correct as
+# written.
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+# A newer push to the same PR/ref supersedes an in-flight run.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.head_ref || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest]
+        python-version: ["3.9", "3.11", "3.13"]
+        include:
+          - os: windows-latest
+            python-version: "3.11"
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+          cache: "pip"
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt -r requirements-dev.txt
+
+      - name: Run test suite
+        run: python -m pytest tests/ -v
+
+      - name: Validate the example registry
+        run: python src/corrections_cli.py audit --registry examples/example-registry.yaml

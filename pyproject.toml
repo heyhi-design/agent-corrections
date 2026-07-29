@@ -1,0 +1,7 @@
+# The CLI runs straight from src/ and is not packaged for installation, so there is no
+# [project] table here and nothing to `pip install .`. The only job of this file is to give
+# pytest a deterministic root, so that `pytest` finds the suite when run from the
+# repository root.
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

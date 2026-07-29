@@ -1,0 +1,11 @@
+# Runtime dependencies for agent-corrections.
+#
+# The CLI is stdlib plus a YAML parser. Nothing else, and no network calls.
+#
+#   python3 -m pip install -r requirements.txt
+#
+# For the test suite, install the dev extras too:
+#
+#   python3 -m pip install -r requirements.txt -r requirements-dev.txt
+
+pyyaml>=6.0,<7.0

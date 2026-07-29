@@ -1,0 +1,95 @@
+# Corrections registry schema
+#
+# This file documents the fields a corrections-registry.yaml entry may use. It is
+# not itself a machine-validated JSON Schema / YAML Schema document -- validation
+# is implemented in src/corrections_cli.py (see the `audit` command and
+# `validate_entry()`, both defined there). Treat this file as the field
+# reference; treat the CLI as the source of truth for what "valid" means.
+#
+# A registry file is a YAML mapping with two top-level keys: `meta` and `entries`.
+
+# ── meta ─────────────────────────────────────────────────────────────────────
+# Optional but recommended. Free-form bookkeeping about the registry itself --
+# nothing here is read by the CLI commands. Regenerate it by hand or with your
+# own tooling; the CLI does not write to `meta`.
+#
+# meta:
+#   version: "1.0.0"          # your own versioning scheme for the registry file
+#   last_updated: "2026-07-10"
+
+# ── entries ──────────────────────────────────────────────────────────────────
+# A list of correction entries. Each entry is a mapping with the fields below.
+#
+# entries:
+#   - id: <string, required>
+#       Unique, kebab-case identifier. Referenced by `superseded_by` on other
+#       entries and used as the primary key everywhere the CLI reports on an
+#       entry. Pick a name that describes the *pattern*, not the incident
+#       ("sql-migration-missing-rollback-script", not "fix-tuesday-deploy-bug").
+#
+#     category: <string, required>
+#       A free-text label grouping related corrections. Not an enum -- use
+#       whatever taxonomy fits your team. Common starting categories:
+#       voice, formatting, factual, architectural, constraint, service, research.
+#
+#     severity: <"factual" | "behavioral", required>
+#       Determines write authority (see LIFECYCLE_SPEC.md):
+#         factual    -- a fact, a naming convention, an API detail. Cheap to get
+#                        wrong, cheap to verify, safe for an agent to record
+#                        without human sign-off.
+#         behavioral -- a judgment about *how the agent should work*. Requires
+#                        human review before it's trusted as an active rule.
+#
+#     trigger_context: <string, required>
+#       When this correction is likely to matter. Written so a session can
+#       pattern-match against it before doing the risky thing, not just after.
+#       Specific enough to fire on the right tasks; general enough to catch
+#       variants of the same mistake, not just the literal first occurrence.
+#
+#     correction: <string, required>
+#       The rule to follow, stated as a positive instruction ("do X"), not a
+#       description of the bug ("X was broken"). This is the text that gets
+#       injected into a session's context by `corrections inject`.
+#
+#     status: <"active" | "retired" | "superseded", required>
+#       active     -- currently loaded and enforced.
+#       retired    -- no longer relevant (the tool/pattern it referred to is
+#                      gone) but kept for history. Not loaded by `inject`.
+#       superseded -- promoted into a permanent rule living somewhere else
+#                      (a style guide, a linter config, a hard-coded check).
+#                      Not loaded by `inject`. Pairs with `superseded_by`.
+#       (`promoted` is an action you take, not a status value -- promoting an
+#       entry means setting status to `superseded` and filling `superseded_by`.)
+#
+#     times_fired: <integer, optional, defaults to 0>
+#       A floor count of sessions where this correction was relevant. Increment
+#       it when you observe the pattern recurring -- do not treat it as an
+#       exact count of every occurrence; `last_fired` is the more reliable
+#       recency signal. Used by `corrections audit` to flag promotion
+#       candidates (see LIFECYCLE_SPEC.md for the threshold). `corrections add`
+#       fills this in as 0 for a new entry -- you don't supply it by hand.
+#
+#     last_fired: <"YYYY-MM-DD" | null, optional, defaults to null>
+#       Date this correction was last observed as relevant. `null` for an
+#       entry that was written proactively and has not fired yet. Used by
+#       `corrections audit` to flag stale entries. `corrections add` fills
+#       this in as null for a new entry -- you don't supply it by hand.
+#
+#     superseded_by: <string | null, optional>
+#       Where the promoted rule now lives -- a file path, a linter rule id, a
+#       style-guide section. Set only when status is `superseded`. `null` or
+#       omitted otherwise.
+#
+#     origin_date: <"YYYY-MM-DD", optional>
+#       The date this entry was first written. Distinct from `last_fired`
+#       (most recent occurrence) -- this is when the pattern was first named.
+#
+#     pattern: <string, optional>
+#       An explanation of the failure mode itself: why the mistake happens,
+#       what makes it easy to miss. Most valuable on behavioral entries, where
+#       the "why" carries as much weight as the rule, but useful on any entry
+#       whose failure mode isn't self-explanatory. Omit it where the correction
+#       speaks for itself.
+#
+# Unrecognized fields are preserved on read but ignored by every CLI command --
+# add your own bookkeeping fields freely without breaking anything here.

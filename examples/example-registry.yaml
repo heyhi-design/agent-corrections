@@ -1,0 +1,283 @@
+# Example corrections registry.
+#
+# Twelve entries demonstrating the schema (schema/corrections-schema.yaml), the
+# full lifecycle (active -> superseded, active -> retired), and the two review
+# tiers (factual vs. behavioral). Every entry here is either adapted from a
+# small, framework-level seed set with no product- or company-specific content,
+# or invented from scratch. None of it is any real team's actual registry --
+# treat it as a working demo, not a template to copy verbatim.
+#
+# Try it:
+#   python3 src/corrections_cli.py search "token" --registry examples/example-registry.yaml
+#   python3 src/corrections_cli.py audit --registry examples/example-registry.yaml --as-of 2026-07-10
+#   python3 src/corrections_cli.py inject --format generic --registry examples/example-registry.yaml
+#
+# `inject` takes --format claude, openai, or generic. Same registry, same entries; only the
+# shape of the emitted block changes, to suit whatever your runtime reads as instructions.
+#
+# `origin_date` is null on every entry. These corrections have no origin history in YOUR
+# instance, and this file is a demo of the schema rather than a record of anyone's real
+# registry. `times_fired` and `last_fired` ARE populated, because `audit` reads them to
+# demonstrate staleness detection and promotion candidates -- run it and you can see the
+# difference between a correction that keeps firing and one nobody has hit in months.
+
+meta:
+  version: "1.0.0"
+  last_updated: "2026-07-10"
+
+entries:
+
+  # ── Seed set: framework-level patterns, not tied to any one team's stack ──
+
+  - id: plan-prior-art-blindness
+    category: architectural
+    severity: behavioral
+    trigger_context: >-
+      Any session that produces a plan framed as "evolution," "v2," "next iteration,"
+      "update," "extend," or "improvement" of an existing system. Especially risky
+      when the system has multiple deployments or instances that a single search
+      might not surface.
+    correction: >-
+      Before writing a plan that extends or evolves an existing system: search
+      cross-session memory and grep the project for the system name and adjacent
+      terms; read every prior plan, decision record, and update artifact that
+      surfaces, not just skim it; cite prior work explicitly in the new plan's
+      "what this builds on" section; position the new work as extending or
+      superseding specific prior work, never as starting clean. The test: would
+      the author of the prior work recognize the new plan as building on theirs,
+      or would they feel it duplicates and ignores their effort?
+    pattern: >-
+      The failure mode: an agent writes a plan to extend a system without first
+      discovering that substantial prior work already exists, re-deriving
+      analysis and decisions that were already written down -- producing
+      duplicated effort and a misframed positioning that has to be corrected later.
+    origin_date: null
+    times_fired: 1
+    last_fired: "2026-05-02"
+    status: active
+
+  - id: web-search-summary-as-primary-source
+    category: factual
+    severity: factual
+    trigger_context: >-
+      Research sessions that use a web search tool to verify claims about third
+      parties (people, organizations, events). Search-result summaries can
+      confidently report a connection that is actually a conflation of unrelated
+      facts -- the hallucination survives because the tone is confident and the
+      claim aligns with adjacent true facts.
+    correction: >-
+      Treat any search-result summary as a hypothesis to verify, not a fact to
+      record. Before a claim about a third party enters a research note or
+      written document, fetch the primary source directly and confirm the claim is
+      actually there -- not merely plausible. For high-stakes claims (anything
+      driving a priority ranking or a scoping decision), document the
+      primary-source verification step alongside the claim.
+    pattern: >-
+      The failure mode: search summaries are confident even when wrong, and the
+      confidence carries forward through the rest of the workflow unquestioned.
+    origin_date: null
+    times_fired: 1
+    last_fired: "2026-05-06"
+    status: active
+
+  - id: named-instrument-without-source-confirmation
+    category: research
+    severity: factual
+    trigger_context: >-
+      Any session that adds a specific named reference -- a named pattern, a
+      cited framework, a taxonomic label -- to a document for specificity,
+      without first confirming the name is actually correct against its source.
+    correction: >-
+      Before naming a specific instrument, pattern, or label in any document:
+      grep the relevant source for the name and confirm it is actually described
+      there, not merely tangentially related. If any name in a set is
+      unconfirmed, use general language rather than naming the confirmed ones
+      selectively -- partial confirmation is not confirmation.
+    pattern: >-
+      The failure mode: named references improve perceived credibility, which
+      creates pressure to include them even when unconfirmed -- the names feel
+      correct because they're real and relevant, not because they were checked.
+    origin_date: null
+    times_fired: 3
+    last_fired: "2026-06-11"
+    status: active
+
+  - id: synthesis-vs-bucket-record-drift
+    category: architectural
+    severity: factual
+    trigger_context: >-
+      Any session that amends a granular state record in a source-of-truth file
+      (a ledger entry, a per-item status field) without also checking the
+      downstream summary surfaces that paraphrase that record elsewhere.
+    correction: >-
+      When a source-of-truth record changes, check every downstream summary
+      surface that paraphrases it in the same session. If a surface can't be
+      updated immediately, log a follow-on task naming the drift explicitly --
+      don't let the two surfaces silently diverge.
+    pattern: >-
+      Ledger records are the audit truth, but summary surfaces are read far more
+      often, and the drift between them is invisible until someone reads both
+      at once.
+    origin_date: null
+    times_fired: 0
+    last_fired: null
+    status: active
+
+  - id: split-schema-canonicalization-drift
+    category: architectural
+    severity: behavioral
+    trigger_context: >-
+      Any session that extends a schema by splitting one logical concept into
+      two related fields (a state field plus a reason field; a count plus a
+      justification field). Applies to any registry, ledger, or config schema
+      where more than one field could plausibly answer "what is the state of
+      this thing."
+    correction: >-
+      When splitting one concept into multiple schema fields, document the
+      canonical relationship in the same change: which field is the answer
+      readers should trust first, what each other field adds as context only,
+      and what happens when they disagree. Write the declaration at the time
+      of the split, not after the first contradiction surfaces.
+    pattern: >-
+      Without this discipline, the second field accretes its own authority --
+      writers update one field and not the other, readers pick whichever they
+      saw first, and the schema ends up with two silently diverging records of
+      the same fact.
+    origin_date: null
+    times_fired: 0
+    last_fired: null
+    status: active
+
+  # ── Invented entries, spanning the remaining categories and both statuses ──
+
+  - id: hardcoded-hex-bypasses-token
+    category: architectural
+    severity: behavioral
+    trigger_context: >-
+      Reviewing agent-generated component code in a project with a design token
+      system. Generated components frequently hardcode a hex or RGB color value
+      that visually matches an existing token instead of referencing the token
+      itself -- the output looks correct in isolation and passes a visual check,
+      but breaks the moment the token's value changes.
+    correction: >-
+      Any color, spacing, or typography value in generated code that matches an
+      existing token's value must reference the token, not the literal value.
+      Example: a generated button using `background: #0057FF` when
+      `color-action-primary` already resolves to that value should use
+      `background: var(--color-action-primary)` instead. Flag the literal as a
+      drift, not a style preference.
+    pattern: >-
+      Generation models are trained to produce visually plausible output, not
+      to know your token architecture -- they will reproduce the right color
+      without knowing it should be a reference. The drift is invisible until the
+      token value changes and only some of the UI updates.
+    origin_date: null
+    times_fired: 4
+    last_fired: "2026-06-30"
+    status: active
+
+  - id: commit-message-missing-ticket-ref
+    category: constraint
+    severity: factual
+    trigger_context: >-
+      Opening or merging a pull request whose commit messages don't reference a
+      tracking ticket. Easy to let slide on small fixes; compounds into an
+      unauditable history once the team can't tell which commits map to which
+      planned work.
+    correction: >-
+      Every commit message includes its tracking ticket id in the subject line
+      or trailer. A PR with no ticket-referencing commits does not merge until
+      one is added or the exception is explicitly noted in the PR description.
+    origin_date: null
+    times_fired: 6
+    last_fired: "2026-05-02"
+    status: superseded
+    superseded_by: "commit-lint CI rule (references-empty check enabled on the default branch)"
+
+  - id: readme-badge-links-to-wrong-branch
+    category: formatting
+    severity: factual
+    trigger_context: >-
+      Adding or editing a CI status badge in a README. Badges copy-pasted from
+      another repo or an earlier branch keep pointing at that source's branch
+      name instead of the current repo's default branch.
+    correction: >-
+      Any CI badge added to a README must have its branch query parameter
+      checked against the repo's actual default branch before the PR merges,
+      not assumed from the template it was copied from.
+    origin_date: null
+    times_fired: 1
+    last_fired: "2026-01-15"
+    status: active
+
+  - id: test-fixture-uses-production-api-key-env-var
+    category: constraint
+    severity: behavioral
+    trigger_context: >-
+      Writing or reviewing a test fixture that reads a credential from the
+      environment. A fixture that falls through to a production-named env var
+      when a test-specific one is unset will silently run against production
+      the first time the test-specific variable isn't configured.
+    correction: >-
+      Test fixtures must read credentials from a dedicated test-prefixed
+      environment variable only, with no fallback to the production-named
+      variable. If the test variable is unset, the fixture fails loudly with a
+      clear message rather than falling through.
+    pattern: >-
+      The fallback looks convenient in local development -- "just use whatever
+      key is around" -- but the same convenience is what makes it dangerous in
+      CI or a shared environment where the production variable is actually set.
+      Promotion clause: 5 fires promotes this to a CI lint rule that rejects
+      any test fixture reading a non-test-prefixed credential env var.
+    origin_date: null
+    times_fired: 5
+    last_fired: "2026-06-28"
+    status: active
+
+  - id: python2-print-statement-syntax
+    category: factual
+    severity: factual
+    trigger_context: >-
+      Writing or reviewing Python code in a codebase that has fully migrated off
+      Python 2. No longer applicable once the migration is complete and CI
+      enforces a Python 3 minimum.
+    correction: >-
+      Use `print(...)` as a function call, never the Python 2 `print ...`
+      statement form. (Retired once the codebase's minimum supported version
+      excludes Python 2 entirely and a linter enforces it.)
+    origin_date: null
+    times_fired: 3
+    last_fired: "2025-11-02"
+    status: retired
+
+  - id: passive-voice-in-error-messages
+    category: voice
+    severity: behavioral
+    trigger_context: >-
+      Writing or reviewing any user-facing error or status message. Generated
+      copy defaults to passive constructions that describe what happened
+      without saying what the reader should do about it.
+    correction: >-
+      User-facing error messages state what happened and what to do next, in
+      that order, in active voice. "Connection failed. Retrying in 30s." not "A
+      connection failure was experienced and a retry will be attempted."
+    origin_date: null
+    times_fired: 2
+    last_fired: "2026-06-15"
+    status: active
+
+  - id: support-ticket-closed-without-repro-confirmation
+    category: service
+    severity: behavioral
+    trigger_context: >-
+      Closing a support ticket as resolved after a fix ships. It's tempting to
+      close on "the fix is deployed" rather than "the reporter confirmed it
+      works" -- the two are not the same claim.
+    correction: >-
+      A support ticket closes as resolved only after the reporter (or an
+      equivalent verification step, when the reporter is unreachable) confirms
+      the original symptom is gone -- not merely that a fix was deployed.
+    origin_date: null
+    times_fired: 2
+    last_fired: "2026-05-19"
+    status: active
