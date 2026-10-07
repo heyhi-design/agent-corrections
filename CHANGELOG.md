@@ -6,6 +6,21 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html) once a first version is
 tagged.
 
+## [0.1.1] - 2026-10-06
+
+### Fixed
+
+- **`add` no longer deletes the registry's comments.** It used to write the whole file back through
+  the YAML serializer, which dropped every hand-written comment: a header explaining what the
+  registry is for, inline notes, a footer. On an existing file, `add` now inserts only the new
+  entry's text at the end of the `entries:` list (matching the list's indentation, and handling an
+  empty `entries: []`), re-reads the result, and writes it only if the one change is the appended
+  entry. The write is still atomic. A brand-new file is written as before. If the `entries:` list
+  is laid out in a way the insert does not handle (for example, entries written inline in brackets),
+  `add` falls back to the old full write when the file has no comments to lose, and otherwise stops
+  with an error and writes nothing, so you can add the entry by hand. This removes the 0.1.0 known
+  limitation about `add` and inline comments.
+
 ## [0.1.0] - 2026-07-29
 
 The first public release.

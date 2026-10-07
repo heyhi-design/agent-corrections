@@ -171,9 +171,11 @@ def save_registry(path: Path, data: dict[str, Any]) -> None:
 
     Note: this rewrites the whole file via yaml.safe_dump (deliberately the
     pure-Python dumper, not the C-accelerated one -- see the module-level comment
-    on _YAML_LOADER for why), which does not preserve hand-written comments. If
-    you rely on `add` to write entries, keep commentary in entry fields (or a
-    separate doc), not inline YAML comments -- they will not survive a write.
+    on _YAML_LOADER for why), which does not preserve hand-written comments.
+    `add` does not lose them: on an existing file it appends through
+    _append_preserving_comments, which splices only the new entry's text, and it
+    calls this function only for a brand-new file or for an unusual layout that
+    has no comments to lose (with comments, it refuses and writes nothing).
     """
     path.parent.mkdir(parents=True, exist_ok=True)
     tmp_path = path.with_name(f".{path.name}.tmp-{os.getpid()}")
@@ -188,6 +190,106 @@ def save_registry(path: Path, data: dict[str, Any]) -> None:
         # temp file the atomic step never got to consume.
         tmp_path.unlink(missing_ok=True)
         raise
+
+
+# Comment-preserving append. `add` splices the new entry's text into the
+# existing file instead of re-dumping the whole registry, so hand-written
+# comments (a file header, inline notes, a footer) survive. save_registry above
+# still does the full rewrite; `add` only uses it for a brand-new file, or for an
+# unusual shape that carries no comments to lose.
+
+_ENTRIES_LINE = re.compile(r"^entries:[ \t]*(?P<flow>\[[ \t]*\])?[ \t]*(?P<comment>#.*)?$")
+_ITEM_LINE = re.compile(r"^(?P<indent>[ \t]*)- ")
+
+
+def _has_comments(text: str) -> bool:
+    """True if any line carries a YAML comment. Errs toward True (a '#' inside a
+    quoted string counts), which only makes `add` refuse more often, never lose more."""
+    return any(re.search(r"(^|\s)#", line) for line in text.splitlines())
+
+
+def _indent_of(line: str) -> int:
+    return len(line) - len(line.lstrip(" \t"))
+
+
+def _splice_entry(text: str, entry: dict[str, Any]) -> str | None:
+    """
+    Return `text` with `entry` appended to its top-level `entries:` list, every
+    other byte unchanged, or None when the file's shape is not one this splice
+    handles safely (no single top-level `entries:` line, or entries written in
+    flow style with items). The caller verifies the result before writing.
+    """
+    lines = text.splitlines(keepends=True)
+    if lines and not lines[-1].endswith("\n"):
+        lines[-1] += "\n"
+    hits = [i for i, line in enumerate(lines) if _ENTRIES_LINE.match(line.rstrip("\r\n"))]
+    if len(hits) != 1:
+        return None
+    head = hits[0]
+    m = _ENTRIES_LINE.match(lines[head].rstrip("\r\n"))
+    block = yaml.safe_dump([entry], sort_keys=False, default_flow_style=False, allow_unicode=True)
+
+    if m.group("flow"):  # `entries: []`
+        comment = f"  {m.group('comment')}" if m.group("comment") else ""
+        lines[head] = f"entries:{comment}\n"
+        return "".join(lines[: head + 1]) + block + "".join(lines[head + 1:])
+
+    # Block style: find the list's item indent and its last content line.
+    def is_filler(line: str) -> bool:
+        s = line.strip()
+        return not s or s.startswith("#")
+
+    indent = None
+    last = head
+    for i in range(head + 1, len(lines)):
+        line = lines[i]
+        if is_filler(line):
+            continue
+        item = _ITEM_LINE.match(line)
+        if indent is None:
+            if not item:
+                break  # `entries:` is empty (null) and the next key follows
+            indent = item.group("indent")
+        if (item and item.group("indent") == indent) or _indent_of(line) > len(indent):
+            last = i
+            continue
+        break
+    pad = indent or ""
+    block = "".join(pad + b if b.strip() else b for b in block.splitlines(keepends=True))
+    return "".join(lines[: last + 1]) + block + "".join(lines[last + 1:])
+
+
+def _append_preserving_comments(path: Path, entry: dict[str, Any]) -> bool:
+    """
+    Append `entry` to an existing registry without discarding comments. Returns
+    True when written, False when the splice could not be done safely (nothing is
+    written then). A splice is written only if re-parsing it shows exactly one
+    change: `entry` appended to `entries`, every other key identical.
+    """
+    text = path.read_text(encoding="utf-8")
+    new_text = _splice_entry(text, entry)
+    if new_text is None:
+        return False
+    try:
+        before = yaml.load(text, Loader=_YAML_LOADER) or {}
+        after = yaml.load(new_text, Loader=_YAML_LOADER) or {}
+    except yaml.YAMLError:
+        return False
+    if not isinstance(after, dict):
+        return False
+    rest_before = {k: v for k, v in before.items() if k != "entries"}
+    rest_after = {k: v for k, v in after.items() if k != "entries"}
+    if rest_before != rest_after or after.get("entries") != (before.get("entries") or []) + [entry]:
+        return False
+    tmp_path = path.with_name(f".{path.name}.tmp-{os.getpid()}")
+    try:
+        with open(tmp_path, "w", encoding="utf-8") as f:
+            f.write(new_text)
+        os.replace(tmp_path, path)
+    except BaseException:
+        tmp_path.unlink(missing_ok=True)
+        raise
+    return True
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -400,6 +502,21 @@ def cmd_add(args: argparse.Namespace) -> int:
 
         if reply not in ("y", "yes"):
             print("Not added.")
+            return 1
+
+    # An existing file gets the comment-preserving splice. The full rewrite below
+    # stays the path for a new file, or for an unusual layout that carries no
+    # comments to lose.
+    if registry_path.exists():
+        if _append_preserving_comments(registry_path, entry):
+            print(f"Added '{args.id}' to {registry_path}.")
+            return 0
+        if _has_comments(registry_path.read_text(encoding="utf-8")):
+            print(
+                f"error: could not append to {registry_path} without discarding its comments "
+                f"(an unusual layout for `entries:`). Nothing was written; add the entry by hand.",
+                file=sys.stderr,
+            )
             return 1
 
     registry["entries"].append(entry)
