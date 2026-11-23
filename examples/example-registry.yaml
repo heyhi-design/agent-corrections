@@ -171,6 +171,13 @@ entries:
       to know your token architecture -- they will reproduce the right color
       without knowing it should be a reference. The drift is invisible until the
       token value changes and only some of the UI updates.
+    mistake: >-
+      A generated card component shipped `border-color: #D0D5DD` where the
+      `color-border-subtle` token already held that value; a later theme change
+      updated every border but that one.
+    why: >-
+      A token is a promise that one change propagates everywhere. Each literal
+      that matches a token quietly breaks that promise for one component.
     origin_date: null
     times_fired: 4
     last_fired: "2026-06-30"

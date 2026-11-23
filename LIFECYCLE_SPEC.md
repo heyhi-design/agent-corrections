@@ -80,6 +80,90 @@ The entry itself is never deleted. A superseded entry is the audit trail for
 why the permanent rule exists, useful the next time someone asks "why do we
 lint for this."
 
+`corrections retire <id> --reason "..." --superseded-by "<pointer>"` does step
+3 as one edit: it sets `status: superseded` and `superseded_by`, and closes the
+entry's validity window with `valid_until` and `retired_reason`. Without
+`--superseded-by` it sets `status: retired` instead. If your `meta` block
+states counts, run `corrections audit --recount --write` afterwards (with
+`--archive <file>` if you keep an archive) so they follow.
+
+## Change one entry at a time
+
+Add, merge, or retire one entry at a time; never rewrite the registry whole.
+A wholesale rewrite, by a person or an agent, shortens entries, drops the
+reasons, reflows hand-written text, and loses comments, and a reviewer cannot
+tell which lesson changed. `fire`, `retire`, `migrate-key`, `split` and
+`audit --recount --write` follow the rule: each edits only the lines it must,
+re-reads the file to confirm nothing else moved, and refuses, writing nothing,
+when the layout makes that unsafe. `add` appends the one new entry; only on an
+unusual layout with no comments to lose does it fall back to a full rewrite.
+
+## Recording a fire
+
+When a known pattern recurs, `corrections fire <id>` increments that entry's
+`times_fired` and stamps `last_fired` (today, or `--date`). It never moves
+`last_fired` backwards. Do not add a second entry for a recurrence: a sibling
+entry starts its own count at one, so neither copy ever reaches the promotion
+threshold. A fire on a `superseded` entry is worth reading: the permanent rule
+did not catch the situation it was promoted to cover.
+
+## Retiring: a validity window, not a deletion
+
+An entry's validity window runs from `origin_date` to `valid_until`. Retiring
+closes the window and records why (`retired_reason`); the entry stays in the
+file. An `active` entry with `valid_until` set fails validation, because an
+active entry's window is by definition still open. Retiring a behavioral entry
+asks for the same human sign-off as adding one (`--approve`, or the prompt).
+
+## Counts are derived, not trusted
+
+Hand-maintained `meta` counts drift. `corrections audit --recount` derives every
+count a meta block states from the entries, prints stated against derived, and
+exits 1 on drift; `--write` fixes the drifted lines in place. When an archive
+file sits beside the registry under the default name, recount asks you to name
+it (`--archive <file>`) or to confirm the counts describe the live file alone
+(`--live-only`) before it writes, so whole-registry counts are never overwritten
+with live-only ones.
+
+## Active and archive
+
+A registry that loads every session should hold what is in force. When retired
+and superseded entries pile up, `corrections split --archive <file>` moves them
+into an archive file verbatim (creating it on first use, appending after that;
+the default is `<registry name>-archive.<ext>` beside the registry). Comment
+lines above or after a moved entry stay in the live file; move them by hand if
+they belong to it.
+The live file's `meta` keeps the counts for both files; check them with
+`corrections audit --recount --archive <file>`. `corrections split --verify`
+checks the pair: no id in both files, no repeated id within one, only active
+entries in the live file, only retired and superseded ones in the archive, and
+every stated count equal to the count across both.
+
+## Seeds and the rules they assume
+
+A framework seed is often written on the assumption that some rule already
+exists in the instance it lands in. If the rule was never adopted, the seed
+either stays active with nobody asking why, or, worse, ships `superseded` by a
+rule the instance does not have and silently stops loading. `assumes_rule`
+makes the coupling checkable. `corrections audit` flags a seed whose assumed
+file or section is absent, and separately lists active entries whose assumed
+rule has since arrived (candidates for supersession).
+
+## Corrected claims
+
+When a later entry finds that an earlier entry's claim was wrong, the later one
+carries `supersedes: <earlier id>`. It points back, unlike `superseded_by`,
+which points forward at a permanent rule. `corrections audit` lists every
+corrected entry that is still active, so the wrong claim stops loading once
+someone retires it.
+
+## The same lesson, learned twice
+
+Two registries (two instances, or a template and an instance) tend to learn
+some lessons twice. `corrections compare <a> <b>` reports likely duplicates by
+trigger overlap, plus entries that share an id. It is a report: which lesson to
+keep, merge, or retire stays a human call.
+
 ## The human review standard
 
 Promotion is a judgment call, not a threshold crossing. `corrections audit`

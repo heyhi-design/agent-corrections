@@ -6,6 +6,58 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html) once a first version is
 tagged.
 
+## [0.2.0] - 2026-11-22
+
+The registry now keeps its own books: a recurrence is counted on the entry it repeats, counts are
+derived rather than trusted, retirement is a dated validity window, and a registry the reader
+cannot read fails loud instead of reading as empty.
+
+### Changed
+
+- **A registry the CLI cannot read now fails loud.** A file with no `entries:` key whose top level
+  holds a list under another key used to read as an empty registry and exit 0. It now exits 1 and
+  names the key it found, with the one-line fix. An empty `entries:` (empty, null or `[]`) stays
+  valid, and a file with no list anywhere stays an empty registry.
+
+### Added
+
+- **`migrate-key --from <key> [--dry-run]`**: renames the top-level key line to `entries:` and
+  changes nothing else (line endings and an inline comment are kept, and the result is re-parsed
+  before it is written). It refuses when `entries:` already exists, the key is missing, or the key
+  line is not unique.
+- **`fire <id>`**: increments the entry's own `times_fired` and stamps `last_fired`, instead of a
+  sibling entry for the same lesson. `audit` reads promotion candidates from the counter.
+- **`retire <id> --reason`**: sets `retired` (or `superseded`, with `--superseded-by`) plus
+  `valid_until` and `retired_reason`. The entry is never deleted; a behavioral entry needs
+  `--approve`.
+- **`audit --recount [--write] [--archive <file>] [--rules-root <dir>]`**: prints stated versus
+  derived meta counts and exits 1 on drift; `--write` fixes only the drifted lines; `--archive`
+  counts a split archive into the whole-registry totals; `--rules-root` checks the rules seeds
+  assume.
+- **`split --archive <file> [--check] [--verify]`**: moves retired and superseded entries verbatim
+  to an archive (archive first, then the live file, each verified by re-parse); `--verify` checks
+  the standing invariant (ids disjoint and unique, live holds active only, archive holds retired
+  and superseded only, stated counts equal the two-file totals).
+- **`inject --max N`**: caps the injected set, behavioral entries first, then the most fired, then
+  the most recent, with a note on what the cap left out. Without `--max` the output is unchanged.
+- **`compare <a> <b>`**: a report of likely duplicate lessons across two registries, by trigger
+  overlap, plus ids present in both. Report only.
+- **Optional fields**: `mistake`, `why`, `supersedes` (corrects an earlier entry's claim; distinct
+  from `superseded_by`), `assumes_rule` (`path § Section`), `valid_until` and `retired_reason`.
+  Validation rejects an `active` entry with `valid_until` set, a non-text value in those text
+  fields, and a malformed or self-referencing `supersedes`. The enums and required fields are
+  unchanged.
+- **CI test matrix pinned to `ubuntu-24.04`**, keeping Python 3.9 coverage (`ubuntu-latest` no
+  longer ships 3.9).
+
+### Upgrading from 0.1.1
+
+- If `audit` now exits 1 naming another key: `corrections_cli.py migrate-key --from <key> --registry
+  <file>` (`--dry-run` shows the one changed line), then `audit --registry <file>`.
+- Then `audit --recount --write` (with `--archive <file>` if your registry is split), optionally
+  `split --archive <file>` followed by `split --verify`, and record recurrences with `fire` from
+  then on.
+
 ## [0.1.1] - 2026-10-06
 
 ### Fixed

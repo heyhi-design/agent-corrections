@@ -29,8 +29,10 @@ entry needs six (`category`, `severity`, and `status` complete it):
   correction: A color literal that matches an existing token's value should reference the token, not the hex.
 ```
 
-The full schema (eleven fields, all documented) is in
-[`schema/corrections-schema.yaml`](schema/corrections-schema.yaml).
+The full schema (seventeen fields, six required, all documented) is in
+[`schema/corrections-schema.yaml`](schema/corrections-schema.yaml). The CLI reads
+entries from the `entries:` key; a registry whose entries sit under any other key
+fails loud and names it, and `migrate-key` renames that key in place.
 
 ## The lifecycle
 
@@ -110,9 +112,10 @@ Then load it at the start of a session: see
 
 ## What this is
 
-- A YAML schema for a correction entry, a CLI to search/add/audit/inject
-  against it, and a lifecycle spec for what happens after an entry proves
-  itself.
+- A YAML schema for a correction entry, a CLI to search, add, audit and
+  inject against it and to keep it honest over time (record fires, retire,
+  recount, split an archive off, compare two registries), and a lifecycle
+  spec for what happens after an entry proves itself.
 - Provider-agnostic. The schema and CLI don't care which model or agent
   runtime is reading the injected context.
 - Designed to be read by a human before anything gets promoted. Behavioral
@@ -134,8 +137,21 @@ Then load it at the start of a session: see
 |---|---|
 | `corrections search "<query>"` | Find entries matching a keyword or phrase |
 | `corrections add --category ... --severity ...` | Create an entry (auto-write for factual, approval-gated for behavioral) |
-| `corrections audit` | Validate the registry's schema; report review-due entries and promotion candidates |
-| `corrections inject --format claude\|openai\|generic` | Emit a session-preamble context block of active entries |
+| `corrections audit` | Validate the registry's schema; report review-due entries and promotion candidates (`--recount` checks the meta counts, `--recount --write` fixes them) |
+| `corrections inject --format claude\|openai\|generic` | Emit a session-preamble context block of active entries (`--max N` caps it, behavioral first) |
+| `corrections fire <id>` | Record a recurrence on the entry itself: `times_fired` +1, `last_fired` stamped |
+| `corrections retire <id> --reason ...` | Close an entry's validity window (retired, or superseded with `--superseded-by`); never deletes |
+| `corrections migrate-key --from <key>` | Rename a registry's list key to `entries:`, changing only that line |
+| `corrections split --archive <file>` | Move retired and superseded entries into an archive file, verbatim (`--verify` checks the pair) |
+| `corrections compare <a> <b>` | Report likely duplicate lessons across two registries by trigger overlap |
+
+Every command that writes is one of the named write verbs (`add`, `fire`,
+`retire`, `migrate-key`, `split`) or takes an explicit `--write`. `fire`,
+`retire`, `migrate-key`, `split` and `audit --recount --write` change only the
+lines they must and refuse, writing nothing, when a file's layout makes that
+unsafe. `add` splices the new entry in without touching existing text; only on
+an unusual layout that carries no comments does it fall back to rewriting the
+file.
 
 `corrections` above is shorthand for `python3 src/corrections_cli.py` --
 there's no installed console-script entry point yet, so every runnable

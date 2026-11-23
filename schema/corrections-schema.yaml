@@ -7,15 +7,30 @@
 # reference; treat the CLI as the source of truth for what "valid" means.
 #
 # A registry file is a YAML mapping with two top-level keys: `meta` and `entries`.
+#
+# The CLI reads entries only from `entries:`. A file with no `entries:` key whose
+# top level holds a list under another key (a `corrections:` list, say) fails
+# loud and names the key, instead of reading as an empty registry. Rename such a
+# key in place, changing only that line, with:
+#   corrections_cli.py migrate-key --from <key> --registry <file>
+# `entries:` with nothing under it (or `entries: []`) is a valid empty registry.
 
 # ── meta ─────────────────────────────────────────────────────────────────────
-# Optional but recommended. Free-form bookkeeping about the registry itself --
-# nothing here is read by the CLI commands. Regenerate it by hand or with your
-# own tooling; the CLI does not write to `meta`.
+# Optional but recommended. Free-form bookkeeping about the registry itself.
+# Most of it is yours: the CLI reads only the count keys below, and only when
+# asked. `corrections audit --recount` derives each count a meta block states
+# from the entries and exits 1 on drift; `--recount --write` fixes the drifted
+# lines in place. Keys it knows: a total (`total_corrections`, `entry_count`,
+# or `total`) and one per status (`active`, `retired`, `superseded`). Keys a
+# meta block does not state are left alone. For a registry split into a live
+# file and an archive (`corrections split`), the live meta keeps the counts for
+# both files; pass `--archive <file>` so the recount sees both.
 #
 # meta:
 #   version: "1.0.0"          # your own versioning scheme for the registry file
 #   last_updated: "2026-07-10"
+#   total_corrections: 12     # optional; derived and checked by `audit --recount`
+#   active: 10
 
 # ── entries ──────────────────────────────────────────────────────────────────
 # A list of correction entries. Each entry is a mapping with the fields below.
@@ -63,7 +78,9 @@
 #
 #     times_fired: <integer, optional, defaults to 0>
 #       A floor count of sessions where this correction was relevant. Increment
-#       it when you observe the pattern recurring -- do not treat it as an
+#       it when you observe the pattern recurring (`corrections fire <id>` does
+#       the edit on the entry itself; never add a sibling entry for a recurrence,
+#       which resets the count to one) -- do not treat it as an
 #       exact count of every occurrence; `last_fired` is the more reliable
 #       recency signal. Used by `corrections audit` to flag promotion
 #       candidates (see LIFECYCLE_SPEC.md for the threshold). `corrections add`
@@ -90,6 +107,39 @@
 #       the "why" carries as much weight as the rule, but useful on any entry
 #       whose failure mode isn't self-explanatory. Omit it where the correction
 #       speaks for itself.
+#
+#     mistake: <string, optional>
+#       The concrete mistake that happened, in a sentence or two. Where
+#       `pattern` generalizes the failure mode, `mistake` is the instance a
+#       reader recognizes.
+#
+#     why: <string, optional>
+#       Why the correction holds: the reason behind the rule, so a future
+#       reader can tell when the rule no longer applies.
+#
+#     supersedes: <string | list of strings, optional>
+#       The id (or ids) of an earlier entry whose *claim* this entry corrects.
+#       It points back at a corrected entry. Distinct from `superseded_by`,
+#       which points forward at the permanent rule a promoted entry became.
+#       Once the new entry lands, retire the one it corrects: `corrections
+#       audit` lists corrected entries that are still active.
+#
+#     assumes_rule: <string, optional; mostly on seeds>
+#       The rule this entry assumes your instance has adopted, written as
+#       "path/to/file.md" or "path/to/file.md § Section heading". `corrections
+#       audit` resolves the path against --rules-root (default: the current
+#       directory) and flags the entry when the file or the section heading is
+#       absent. That matters most for a `superseded` seed: superseded by a rule
+#       you never adopted, it silently stops loading.
+#
+#     valid_until: <"YYYY-MM-DD" | null, optional; set by `corrections retire`>
+#       The date the entry stopped applying. An entry's validity window runs
+#       from `origin_date` to `valid_until`; a retired or superseded entry is
+#       stamped, never deleted. An `active` entry with `valid_until` set fails
+#       validation.
+#
+#     retired_reason: <string, optional; set by `corrections retire`>
+#       Why the entry stopped applying.
 #
 # Unrecognized fields are preserved on read but ignored by every CLI command --
 # add your own bookkeeping fields freely without breaking anything here.

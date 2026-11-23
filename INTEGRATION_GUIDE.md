@@ -82,6 +82,14 @@ python3 src/corrections_cli.py inject --format generic --registry corrections-re
 Plain text, no markdown assumptions. Safe to paste into any system-prompt-like
 field.
 
+**Capping the block.** Instruction-following degrades as a context fills up,
+and earlier instructions tend to win. Once a registry grows, pass `--max N` to
+any format: it injects at most N entries, behavioral ones first (the
+approval-gated tier, costlier to miss), then the most-fired, then the most
+recently fired, and ends with a one-line note saying how many were left out.
+With `--max`, the block is always in that order, even when nothing is cut.
+Without it, every matching entry loads in registry order, as before.
+
 Every format is null-safe: a correction with no `last_fired` yet, or no
 `superseded_by`, never renders as the literal string "None" or leaks a raw
 YAML `null`. If you're writing your own formatter, guard for this explicitly.
@@ -102,10 +110,19 @@ which is the point. The instrumentation step is a habit, not a script:
    already runs), ask: did any loaded correction actually matter this
    session? Not "was it loaded" (all active corrections load every session);
    "did the situation it describes come up."
-2. For each one that did, bump `times_fired` by one and set `last_fired` to
-   today's date. There's no CLI command for this on purpose: it's a two-field
-   edit, and a script that "detects" firing from log output would be guessing
-   at exactly the judgment this step exists to make deliberately.
+2. For each one that did, record the fire on that entry:
+
+   ```
+   python3 src/corrections_cli.py fire <id> --registry corrections-registry.yaml
+   ```
+
+   That bumps `times_fired` by one and stamps `last_fired` with today's date
+   (`--date` for an earlier session), editing those two lines and nothing
+   else. Deciding *whether* the entry fired stays the human step: nothing here
+   "detects" firing from log output, which would be guessing at exactly the
+   judgment this step exists to make deliberately. Never record a recurrence
+   as a new sibling entry; its count starts over at one and the promotion
+   threshold never trips.
 3. If a session catches a genuinely new pattern (not a recurrence of an
    existing entry), that's `corrections add`, not an existing entry's fire
    count. See LIFECYCLE_SPEC.md for how to tell the difference.
@@ -143,13 +160,49 @@ entry, a hard-coded validation), and if so, where that rule should live.
 
 1. Build the permanent rule (the linter config, the CI check, the style guide
    line) wherever it belongs in your codebase.
-2. Edit the entry: `status: superseded`, `superseded_by: "<where the rule now
-   lives>"`.
+2. Close the entry:
+
+   ```
+   python3 src/corrections_cli.py retire <id> --registry corrections-registry.yaml \
+     --reason "promoted to a lint rule" --superseded-by "<where the rule now lives>"
+   ```
+
+   That sets `status: superseded` and `superseded_by`, and stamps the end of
+   the entry's validity window (`valid_until`, `retired_reason`). Leave out
+   `--superseded-by` to retire an entry that simply stopped applying.
 3. Re-run `corrections inject`. Superseded entries stop loading, because the
    agent no longer needs reminding; the rule enforces itself now.
+4. If your `meta` block states counts, bring them in line: `corrections audit
+   --recount --write` (add `--archive <file>` if you keep an archive).
 
 The entry stays in the registry file. It's the audit trail for why the rule
 exists.
+
+**Keeping the loaded file lean.** Once retired and superseded entries pile up,
+move them into an archive file verbatim and check the pair:
+
+```
+python3 src/corrections_cli.py split --registry corrections-registry.yaml --archive corrections-registry-archive.yaml
+python3 src/corrections_cli.py split --registry corrections-registry.yaml --archive corrections-registry-archive.yaml --verify
+python3 src/corrections_cli.py audit --registry corrections-registry.yaml --recount --archive corrections-registry-archive.yaml
+```
+
+**Adopting this version on an existing registry.** If your entries sit under a
+key other than `entries:` (a `corrections:` list, say), every command now fails
+loud and names the key instead of reading the file as empty. Rename it in place,
+then reconcile the counts:
+
+```
+python3 src/corrections_cli.py migrate-key --from corrections --registry corrections-registry.yaml
+python3 src/corrections_cli.py audit --registry corrections-registry.yaml --recount --write
+```
+
+If you also keep an archive file, migrate its key the same way and pass it to the
+recount (`--archive corrections-registry-archive.yaml`), so whole-registry counts
+are checked against both files.
+
+`migrate-key` changes that one line and nothing else (`--dry-run` shows it
+first).
 
 ## 4. Setting up tiered write authority
 
